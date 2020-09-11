@@ -4,10 +4,12 @@ class GameScene: SKScene {
     let zombie = SKSpriteNode(imageNamed: "zombie1")
     var lastUpdateTime: TimeInterval = 0
     var dt: TimeInterval = 0
+    let zombieRotateRadiansPerSec: CGFloat = 4.0 * π
     
     let zombieMovePointsPerSec: CGFloat = 480.0
     var velocity = CGPoint.zero
     let playableRect: CGRect
+    var clickLocation: CGPoint?
     
     override init(size: CGSize) {
         let maxAspectRatio: CGFloat = 16.0/9.0
@@ -42,6 +44,7 @@ class GameScene: SKScene {
             
         addChild(background)
         addChild(zombie)
+        spawnEnemy()
         
         debugDrawPlayableArea()
     }
@@ -53,31 +56,44 @@ class GameScene: SKScene {
             dt = 0
         }
         lastUpdateTime = currentTime
-        print("\(dt*1000) milliseconds since last update")
+//        print("\(dt*1000) milliseconds since last update")
         
-        move(sprite: zombie, velocity: velocity)
-        boundsCheckZombie()
+        if isZombieAtClickLocation() {
+            zombie.position = clickLocation!
+            velocity = CGPoint.zero
+        } else {
+            move(sprite: zombie, velocity: velocity)
+            boundsCheckZombie()
+            rotate(sprite: zombie, direction: velocity, rotateRadiansPerSec: zombieRotateRadiansPerSec)
+        }
+        
+    }
+    
+    func isZombieAtClickLocation() -> Bool {
+        guard let clickLocation = clickLocation else { return false }
+        
+        let movement = (velocity * CGFloat(dt)).length()
+        let distance = (clickLocation - zombie.position).length()
+        
+        if distance <= movement {
+            return true
+        }
+        
+        return false
     }
     
     func move(sprite: SKSpriteNode, velocity: CGPoint) {
-        let amountToMove = CGPoint(x: velocity.x * CGFloat(dt), y: velocity.y * CGFloat(dt))
-        print("Amount to move: \(amountToMove)")
-        sprite.position = CGPoint(x: sprite.position.x + amountToMove.x,
-                                  y: sprite.position.y + amountToMove.y)
+        let amountToMove = velocity * CGFloat(dt)
+//        print("Amount to move: \(amountToMove)")
+        sprite.position += amountToMove
     }
     
     func moveZombieToward(location: CGPoint) {
-        let offset = CGPoint(
-            x: location.x - zombie.position.x,
-            y: location.y - zombie.position.y
-        )
-        let length = sqrt(Double(offset.x * offset.x + offset.y * offset.y))
-        let direction = CGPoint(x: offset.x / CGFloat(length), y: offset.y / CGFloat(length))
-        
-        velocity = CGPoint(
-            x: direction.x * zombieMovePointsPerSec,
-            y: direction.y * zombieMovePointsPerSec
-        )
+        self.clickLocation = location
+        velocity = (location - zombie.position).normalized() * zombieMovePointsPerSec
+        if velocity.x.isNaN {
+            velocity = CGPoint.zero
+        }
     }
     
     func boundsCheckZombie() {
@@ -94,6 +110,12 @@ class GameScene: SKScene {
         if zombie_y <= bottomLeft.y || zombie_y >= topRight.y {
             velocity.y = -velocity.y
         }
+    }
+    
+    func rotate(sprite: SKSpriteNode, direction: CGPoint, rotateRadiansPerSec: CGFloat) {
+        let shortest = shortestAngleBetween(angle1: sprite.zRotation, angle2: velocity.angle)
+        let amountToRotate = min(rotateRadiansPerSec * CGFloat(dt), abs(shortest))
+        sprite.zRotation += shortest.sign() * amountToRotate
     }
     
     func sceneTouched(touchLocation: CGPoint) {
@@ -115,5 +137,20 @@ class GameScene: SKScene {
         let touchLocation = touch.location(in: self)
         
         return touchLocation
+    }
+    
+    func spawnEnemy() {
+        let enemy = SKSpriteNode(imageNamed: "enemy")
+        enemy.position = CGPoint(x: size.width + enemy.size.width/2, y: size.height / 2)
+        addChild(enemy)
+        
+        let actionMidMove = SKAction.move(to: CGPoint(x: size.width/2, y: playableRect.minY + enemy.size.height/2), duration: 1.0)
+        let actionMove = SKAction.move(to: CGPoint(x: -enemy.size.width/2, y: enemy.position.y), duration: 1.0)
+        let wait = SKAction.wait(forDuration: 0.25)
+        let logMessage = SKAction.run() {
+            print("Reached bottom!")
+        }
+        let sequence = SKAction.sequence([actionMidMove, logMessage, wait, actionMove])
+        enemy.run(sequence)
     }
 }
